@@ -1,4 +1,4 @@
 # ROS_DPVO
 
-direct patch visual odometry for ROS2
+deep patch visual odometry for ROS2
 
