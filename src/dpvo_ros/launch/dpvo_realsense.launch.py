@@ -1,0 +1,51 @@
+import os.path as osp
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch_ros.actions import Node
+from launch.substitutions import LaunchConfiguration
+
+
+def generate_launch_description():
+    dpvo_path = get_package_share_directory('dpvo_ros')
+    image_topic = LaunchConfiguration('image_topic')
+    config = LaunchConfiguration('config')
+    calib = LaunchConfiguration('calib')
+    network = LaunchConfiguration('network')
+
+    dpvo_node = Node(
+        package='dpvo_ros',
+        executable='dpvo_node',
+        output='screen',
+        namespace='dpvo_node',
+        parameters=[
+            {'image_topic': image_topic},
+            {'config': config},
+            {'calib': calib},
+            {'network': network},
+        ],
+    )
+
+    ld = LaunchDescription()
+    ld.add_action(DeclareLaunchArgument(
+        'image_topic',
+        default_value='/camera/rgb/image_color',
+        description='Color image topic consumed by DPVO. For realsense2_camera this is often /camera/camera/color/image_raw.',
+    ))
+    ld.add_action(DeclareLaunchArgument(
+        'config',
+        default_value=osp.join(dpvo_path, "config", "default.yaml"),
+        description='DPVO config yaml file.',
+    ))
+    ld.add_action(DeclareLaunchArgument(
+        'calib',
+        default_value=osp.join(dpvo_path, "calib", "tum3.txt"),
+        description='DPVO camera calibration txt file.',
+    ))
+    ld.add_action(DeclareLaunchArgument(
+        'network',
+        default_value=osp.join(dpvo_path, "network", "dpvo.pth"),
+        description='DPVO checkpoint file.',
+    ))
+    ld.add_action(dpvo_node)
+    return ld
