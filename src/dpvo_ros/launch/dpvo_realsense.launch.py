@@ -13,6 +13,8 @@ def generate_launch_description():
     config = LaunchConfiguration('config')
     calib = LaunchConfiguration('calib')
     network = LaunchConfiguration('network')
+    loop_closure = LaunchConfiguration('loop_closure')
+    classic_loop_closure = LaunchConfiguration('classic_loop_closure')
 
     dpvo_node = Node(
         package='dpvo_ros',
@@ -25,6 +27,8 @@ def generate_launch_description():
             {'config': config},
             {'calib': calib},
             {'network': network},
+            {'loop_closure': loop_closure},
+            {'classic_loop_closure': classic_loop_closure},
         ],
     )
 
@@ -53,6 +57,16 @@ def generate_launch_description():
         'network',
         default_value=osp.join(dpvo_path, "network", "dpvo.pth"),
         description='DPVO checkpoint file.',
+    ))
+    ld.add_action(DeclareLaunchArgument(
+        'loop_closure',
+        default_value='false',
+        description='Enable DPVO loop-closure factors.',
+    ))
+    ld.add_action(DeclareLaunchArgument(
+        'classic_loop_closure',
+        default_value='false',
+        description='Enable classic long-term loop closure.',
     ))
     ld.add_action(dpvo_node)
     return ld
