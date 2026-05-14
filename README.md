@@ -23,6 +23,18 @@ source ./install/setup.bash
 ros2 bag play <bag_file>
 ```
 
+if you need loop closure
+
+```bash
+ ros2 launch dpvo_ros dpvo_realsense.launch.py loop_closure:=true
+```
+
+For classic long-term loop closure:
+
+```bash
+ros2 launch dpvo_ros dpvo_realsense.launch.py classic_loop_closure:=true
+```
+
 ## Tips
 
 you can convert bag1 file to bag2 file using `dpvo_ros/scripts/bag_converter.sh`

@@ -19,9 +19,15 @@ class DpVOInterfaceNode(Node):
         self.declare_parameter('config', rclpy.Parameter.Type.STRING)
         self.declare_parameter('image_topic', '/camera/rgb/image_color')
         self.declare_parameter('camera_info_topic', '/camera/camera_info')
+        self.declare_parameter('loop_closure', False)
+        self.declare_parameter('classic_loop_closure', False)
 
         cfg.merge_from_file(self.get_parameter(
             'config').get_parameter_value().string_value)
+        cfg.LOOP_CLOSURE = self.get_parameter(
+            'loop_closure').get_parameter_value().bool_value
+        cfg.CLASSIC_LOOP_CLOSURE = self.get_parameter(
+            'classic_loop_closure').get_parameter_value().bool_value
         # self.get_logger().info(f"dpvo_ROS node config: {cfg}")
 
         self.network = self.get_parameter(
