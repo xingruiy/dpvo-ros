@@ -9,6 +9,7 @@ from launch.substitutions import LaunchConfiguration
 def generate_launch_description():
     dpvo_path = get_package_share_directory('dpvo_ros')
     image_topic = LaunchConfiguration('image_topic')
+    camera_info_topic = LaunchConfiguration('camera_info_topic')
     config = LaunchConfiguration('config')
     calib = LaunchConfiguration('calib')
     network = LaunchConfiguration('network')
@@ -20,6 +21,7 @@ def generate_launch_description():
         namespace='dpvo_node',
         parameters=[
             {'image_topic': image_topic},
+            {'camera_info_topic': camera_info_topic},
             {'config': config},
             {'calib': calib},
             {'network': network},
@@ -31,6 +33,11 @@ def generate_launch_description():
         'image_topic',
         default_value='/camera/rgb/image_color',
         description='Color image topic consumed by DPVO. For realsense2_camera this is often /camera/camera/color/image_raw.',
+    ))
+    ld.add_action(DeclareLaunchArgument(
+        'camera_info_topic',
+        default_value='/camera/rgb/camera_info',
+        description='Camera info topic used to initialize DPVO intrinsics.',
     ))
     ld.add_action(DeclareLaunchArgument(
         'config',
