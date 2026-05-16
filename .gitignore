@@ -47,6 +47,6 @@ data/
 datasets/
 
 # Large model/data artifacts should be downloaded locally.
-*.pth
+#*.pth
 *.pt
 *.ckpt
