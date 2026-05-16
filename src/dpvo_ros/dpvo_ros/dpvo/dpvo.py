@@ -355,8 +355,8 @@ class DPVO:
                     t0 = max(t0, 1)
                     fastba.BA(self.poses, self.patches, self.intrinsics, 
                         target, weight, lmbda, self.pg.ii, self.pg.jj, self.pg.kk, t0, self.n, M=self.M, iterations=2, eff_impl=False)
-            except:
-                print("Warning BA failed...")
+            except Exception as e:
+                print(f"Warning BA failed: {e}")
 
             points = pops.point_cloud(SE3(self.poses), self.patches[:, :self.m], self.intrinsics, self.ix[:self.m])
             points = (points[...,1,1,:3] / points[...,1,1,3:]).reshape(-1, 3)
@@ -440,14 +440,20 @@ class DPVO:
         self.fmap1_[:, self.n % self.mem] = F.avg_pool2d(fmap[0], 1, 1)
         self.fmap2_[:, self.n % self.mem] = F.avg_pool2d(fmap[0], 4, 4)
 
-        self.counter += 1        
+        self.counter += 1
         if self.n > 0 and not self.is_initialized:
-            if self.motion_probe() < 2.0:
+            probe_val = self.motion_probe()
+            print(f"motion_probe: {probe_val:.3f}, n={self.n}, counter={self.counter}")
+            if probe_val < 2.0:
                 self.pg.delta[self.counter - 1] = (self.counter - 2, Id[0])
                 return
 
         self.n += 1
         self.m += self.M
+        if self.n == 8 and not self.is_initialized:
+            print("SLAM initializing...")
+        elif self.is_initialized:
+            print(f"Frame {self.n}: pose updated")
 
         if self.cfg.LOOP_CLOSURE:
             if self.n - self.last_global_ba >= self.cfg.GLOBAL_OPT_FREQ:

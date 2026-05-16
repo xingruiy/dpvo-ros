@@ -8,11 +8,6 @@ for file in os.listdir('launch'):
     if file.endswith('.launch.py'):
         launch_files.append('launch/' + file)
 
-calib_files = []
-for file in os.listdir('calib'):
-    if file.endswith('.txt'):
-        calib_files.append('calib/' + file)
-
 config_files = []
 for file in os.listdir('config'):
     if file.endswith('.yaml'):
@@ -27,7 +22,6 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', launch_files),
-        ('share/' + package_name + '/calib', calib_files),
         ('share/' + package_name + '/config', config_files),
         ('share/' + package_name + '/network', ['network/dpvo.pth']),
     ],
