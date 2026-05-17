@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import rclpy
+from lietorch import SE3
 from dpvo_ros.dpvo.config import cfg
 # from dpvo_ros.dpvo.plot_utils import plot_trajectory, save_output_for_COLMAP, save_ply
 # from dpvo_ros.dpvo.stream import image_stream, video_stream
@@ -79,7 +80,6 @@ class DpVOInterfaceNode(Node):
         if self.impl_ is None:
             self.get_logger().warn("Waiting for camera info...")
             return
-        self.get_logger().info("Received new images!")
         try:
             cv_image = self.image_msg_to_numpy(image)
         except ValueError as exc:
@@ -96,40 +96,64 @@ class DpVOInterfaceNode(Node):
         self.publish_pose()
 
     def publish_pose(self):
-        pose = self.impl_.poses[0, self.impl_.n-1].cpu().numpy().tolist()
+        # pg.poses_ stores world-to-camera (w2c); invert to get camera-in-world (c2w)
+        c2w = SE3(self.impl_.poses[0, self.impl_.n - 1]).inv()
+        pose = c2w.data.cpu().numpy()  # [tx, ty, tz, qx, qy, qz, qw] in DPVO world frame
+
+        # Convert from DPVO world frame (X=right, Y=down, Z=forward)
+        # to ROS REP-103 (X=forward, Y=left, Z=up):
+        #   ros_x = dpvo_z,  ros_y = -dpvo_x,  ros_z = -dpvo_y
+        tx, ty, tz = pose[0], pose[1], pose[2]
+        ros_tx, ros_ty, ros_tz = tz, -tx, -ty
+
+        # Rotate orientation: q_ros = q_d2r ⊗ q_c2w
+        # q_d2r = (x=-0.5, y=0.5, z=-0.5, w=0.5) encodes the DPVO→ROS frame rotation
+        qx, qy, qz, qw = pose[3], pose[4], pose[5], pose[6]
+        dx, dy, dz, dw = -0.5, 0.5, -0.5, 0.5
+        ros_qw = dw*qw - dx*qx - dy*qy - dz*qz
+        ros_qx = dw*qx + dx*qw + dy*qz - dz*qy
+        ros_qy = dw*qy - dx*qz + dy*qw + dz*qx
+        ros_qz = dw*qz + dx*qy - dy*qx + dz*qw
+
         pose_msg = PoseStamped()
         pose_msg.header.stamp = self.get_clock().now().to_msg()
         pose_msg.header.frame_id = "world"
-        pose_msg.pose.position.x = pose[0]
-        pose_msg.pose.position.y = pose[1]
-        pose_msg.pose.position.z = pose[2]
-        pose_msg.pose.orientation.x = pose[3]
-        pose_msg.pose.orientation.y = pose[4]
-        pose_msg.pose.orientation.z = pose[5]
-        pose_msg.pose.orientation.w = pose[6]
+        pose_msg.pose.position.x = float(ros_tx)
+        pose_msg.pose.position.y = float(ros_ty)
+        pose_msg.pose.position.z = float(ros_tz)
+        pose_msg.pose.orientation.x = float(ros_qx)
+        pose_msg.pose.orientation.y = float(ros_qy)
+        pose_msg.pose.orientation.z = float(ros_qz)
+        pose_msg.pose.orientation.w = float(ros_qw)
         self.pose_pub_.publish(pose_msg)
 
     def point_cloud_publish_callback(self):
         if self.impl_ is not None and self.impl_.m > 0:
-            points = self.impl_.pg.points_.cpu().numpy()[:self.impl_.m]
+            pts = self.impl_.pg.points_.cpu().numpy()[:self.impl_.m]
             colors = self.impl_.pg.colors_.view(-1, 3).cpu().numpy()[:self.impl_.m]
+
+            # Convert from DPVO world (X=right, Y=down, Z=forward)
+            # to ROS REP-103 (X=forward, Y=left, Z=up)
+            ros_pts = np.stack([pts[:, 2], -pts[:, 0], -pts[:, 1]], axis=1)
+
             header = Header(stamp=self.get_clock().now().to_msg(), frame_id='world')
+            data = np.concatenate((ros_pts, colors.astype(np.float32)), axis=1)
             pcd = PointCloud2(
                 header=header,
                 height=1,
-                width=points.shape[0],
+                width=ros_pts.shape[0],
                 is_dense=False,
                 is_bigendian=False,
                 fields=[
-                    PointField(name='x', offset=0, datatype=7, count=1),
-                    PointField(name='y', offset=4, datatype=7, count=1),
-                    PointField(name='z', offset=8, datatype=7, count=1),
+                    PointField(name='x', offset=0,  datatype=7, count=1),
+                    PointField(name='y', offset=4,  datatype=7, count=1),
+                    PointField(name='z', offset=8,  datatype=7, count=1),
                     PointField(name='r', offset=12, datatype=7, count=1),
                     PointField(name='g', offset=16, datatype=7, count=1),
                     PointField(name='b', offset=20, datatype=7, count=1)],
                 point_step=24,
-                row_step=points.shape[0] * 24,
-                data=np.concatenate((points, colors), axis=1).tobytes())
+                row_step=ros_pts.shape[0] * 24,
+                data=data.astype(np.float32).tobytes())
             self.map_pub_.publish(pcd)
 
 

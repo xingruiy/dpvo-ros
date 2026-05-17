@@ -452,8 +452,6 @@ class DPVO:
         self.m += self.M
         if self.n == 8 and not self.is_initialized:
             print("SLAM initializing...")
-        elif self.is_initialized:
-            print(f"Frame {self.n}: pose updated")
 
         if self.cfg.LOOP_CLOSURE:
             if self.n - self.last_global_ba >= self.cfg.GLOBAL_OPT_FREQ:
