@@ -7,6 +7,7 @@ from dpvo_ros.dpvo.config import cfg
 # from dpvo_ros.dpvo.stream import image_stream, video_stream
 from dpvo_ros.dpvo.utils import Timer
 from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import Path
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 from std_msgs.msg import Header
@@ -50,8 +51,11 @@ class DpVOInterfaceNode(Node):
         self.pose_pub_ = self.create_publisher(PoseStamped, "/camera/estimate_pose", 10)
         self.render_pub_ = self.create_publisher(Image, '/camera/render', 10)
         self.map_pub_ = self.create_publisher(PointCloud2, '/map/point_cloud', 10)
+        self.trajectory_pub_ = self.create_publisher(Path, '/camera/trajectory', 10)
 
         self.impl_ = None
+        self.last_image_np_ = None
+        self.last_image_enc_ = None
         self.get_logger().info(f"DPVO_ROS node initialized! Subscribed to {image_topic}")
 
     def camera_info_callback(self, msg: CameraInfo):
@@ -86,6 +90,9 @@ class DpVOInterfaceNode(Node):
             self.get_logger().error(str(exc))
             return
 
+        self.last_image_np_ = cv_image
+        self.last_image_enc_ = image.encoding
+
         image = torch.from_numpy(cv_image).permute(2, 0, 1).cuda()
         intrinsics = torch.from_numpy(self.intr_mat).cuda()
         t = self.get_clock().now().nanoseconds * 1e-9
@@ -94,6 +101,8 @@ class DpVOInterfaceNode(Node):
             self.impl_(t, image, intrinsics)
 
         self.publish_pose()
+        self.publish_render()
+        self.publish_trajectory()
 
     def publish_pose(self):
         # pg.poses_ stores world-to-camera (w2c); invert to get camera-in-world (c2w)
@@ -127,34 +136,102 @@ class DpVOInterfaceNode(Node):
         pose_msg.pose.orientation.w = float(ros_qw)
         self.pose_pub_.publish(pose_msg)
 
+    def publish_render(self):
+        if self.last_image_np_ is None:
+            return
+        img = self.last_image_np_
+        enc = self.last_image_enc_ if self.last_image_enc_ != '8UC3' else 'rgb8'
+        h, w = img.shape[:2]
+        msg = Image()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "camera"
+        msg.height = h
+        msg.width = w
+        msg.encoding = enc
+        msg.is_bigendian = False
+        msg.step = w * 3
+        msg.data = img.tobytes()
+        self.render_pub_.publish(msg)
+
+    def publish_trajectory(self):
+        if self.impl_ is None or self.impl_.n == 0:
+            return
+        n = self.impl_.n
+        poses_c2w = SE3(self.impl_.pg.poses_[:n]).inv().data.cpu().numpy()
+
+        now = self.get_clock().now().to_msg()
+        path_msg = Path()
+        path_msg.header.stamp = now
+        path_msg.header.frame_id = "world"
+
+        for i in range(n):
+            pose = poses_c2w[i]
+            tx, ty, tz = pose[0], pose[1], pose[2]
+            ros_tx, ros_ty, ros_tz = tz, -tx, -ty
+            qx, qy, qz, qw = pose[3], pose[4], pose[5], pose[6]
+            dx, dy, dz, dw = -0.5, 0.5, -0.5, 0.5
+            ros_qw = dw*qw - dx*qx - dy*qy - dz*qz
+            ros_qx = dw*qx + dx*qw + dy*qz - dz*qy
+            ros_qy = dw*qy - dx*qz + dy*qw + dz*qx
+            ros_qz = dw*qz + dx*qy - dy*qx + dz*qw
+            ps = PoseStamped()
+            ps.header.stamp = now
+            ps.header.frame_id = "world"
+            ps.pose.position.x = float(ros_tx)
+            ps.pose.position.y = float(ros_ty)
+            ps.pose.position.z = float(ros_tz)
+            ps.pose.orientation.x = float(ros_qx)
+            ps.pose.orientation.y = float(ros_qy)
+            ps.pose.orientation.z = float(ros_qz)
+            ps.pose.orientation.w = float(ros_qw)
+            path_msg.poses.append(ps)
+
+        self.trajectory_pub_.publish(path_msg)
+
     def point_cloud_publish_callback(self):
-        if self.impl_ is not None and self.impl_.m > 0:
-            pts = self.impl_.pg.points_.cpu().numpy()[:self.impl_.m]
-            colors = self.impl_.pg.colors_.view(-1, 3).cpu().numpy()[:self.impl_.m]
+        if self.impl_ is None or self.impl_.m == 0:
+            return
 
-            # Convert from DPVO world (X=right, Y=down, Z=forward)
-            # to ROS REP-103 (X=forward, Y=left, Z=up)
-            ros_pts = np.stack([pts[:, 2], -pts[:, 0], -pts[:, 1]], axis=1)
+        m = self.impl_.m
+        pts = self.impl_.pg.points_[:m].cpu().numpy()
+        colors = self.impl_.pg.colors_.reshape(-1, 3)[:m].cpu().numpy()
 
-            header = Header(stamp=self.get_clock().now().to_msg(), frame_id='world')
-            data = np.concatenate((ros_pts, colors.astype(np.float32)), axis=1)
-            pcd = PointCloud2(
-                header=header,
-                height=1,
-                width=ros_pts.shape[0],
-                is_dense=False,
-                is_bigendian=False,
-                fields=[
-                    PointField(name='x', offset=0,  datatype=7, count=1),
-                    PointField(name='y', offset=4,  datatype=7, count=1),
-                    PointField(name='z', offset=8,  datatype=7, count=1),
-                    PointField(name='r', offset=12, datatype=7, count=1),
-                    PointField(name='g', offset=16, datatype=7, count=1),
-                    PointField(name='b', offset=20, datatype=7, count=1)],
-                point_step=24,
-                row_step=ros_pts.shape[0] * 24,
-                data=data.astype(np.float32).tobytes())
-            self.map_pub_.publish(pcd)
+        # Convert DPVO frame (X=right, Y=down, Z=forward) → ROS REP-103 (X=forward, Y=left, Z=up)
+        ros_pts = np.stack([pts[:, 2], -pts[:, 0], -pts[:, 1]], axis=1).astype(np.float32)
+
+        # Filter out zero-initialized / degenerate points
+        valid = np.linalg.norm(ros_pts, axis=1) > 1e-6
+        ros_pts = ros_pts[valid]
+        colors = colors[valid]
+        if ros_pts.shape[0] == 0:
+            return
+
+        # Pack RGB into single float32 field (standard RViz packed encoding: 0x00RRGGBB)
+        r = colors[:, 0].astype(np.uint32)
+        g = colors[:, 1].astype(np.uint32)
+        b = colors[:, 2].astype(np.uint32)
+        rgb = ((r << 16) | (g << 8) | b).view(np.float32).reshape(-1, 1)
+
+        data = np.concatenate([ros_pts, rgb], axis=1)  # (n_valid, 4) float32
+
+        n_pts = ros_pts.shape[0]
+        header = Header(stamp=self.get_clock().now().to_msg(), frame_id='world')
+        pcd = PointCloud2(
+            header=header,
+            height=1,
+            width=n_pts,
+            is_dense=False,
+            is_bigendian=False,
+            fields=[
+                PointField(name='x',   offset=0,  datatype=PointField.FLOAT32, count=1),
+                PointField(name='y',   offset=4,  datatype=PointField.FLOAT32, count=1),
+                PointField(name='z',   offset=8,  datatype=PointField.FLOAT32, count=1),
+                PointField(name='rgb', offset=12, datatype=PointField.FLOAT32, count=1),
+            ],
+            point_step=16,
+            row_step=n_pts * 16,
+            data=data.tobytes())
+        self.map_pub_.publish(pcd)
 
 
 def main(args=None):
