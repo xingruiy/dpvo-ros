@@ -442,16 +442,12 @@ class DPVO:
 
         self.counter += 1
         if self.n > 0 and not self.is_initialized:
-            probe_val = self.motion_probe()
-            print(f"motion_probe: {probe_val:.3f}, n={self.n}, counter={self.counter}")
-            if probe_val < 2.0:
+            if self.motion_probe() < 2.0:
                 self.pg.delta[self.counter - 1] = (self.counter - 2, Id[0])
                 return
 
         self.n += 1
         self.m += self.M
-        if self.n == 8 and not self.is_initialized:
-            print("SLAM initializing...")
 
         if self.cfg.LOOP_CLOSURE:
             if self.n - self.last_global_ba >= self.cfg.GLOBAL_OPT_FREQ:

@@ -42,6 +42,34 @@ For classic long-term loop closure:
 ros2 launch dpvo_ros dpvo_realsense.launch.py classic_loop_closure:=true
 ```
 
+## Visualization (RViz2)
+
+The RealSense launch file starts RViz2 automatically with a pre-configured layout (`config/dpvo.rviz`):
+
+```bash
+ros2 launch dpvo_ros realsense.launch.py
+```
+
+To disable RViz2:
+
+```bash
+ros2 launch dpvo_ros realsense.launch.py use_rviz:=false
+```
+
+To use a custom RViz config:
+
+```bash
+ros2 launch dpvo_ros realsense.launch.py rviz_config:=/path/to/your.rviz
+```
+
+The default config displays:
+
+| Topic | Type | Description |
+|---|---|---|
+| `/camera/estimate_pose` | PoseStamped | Current camera pose (red arrow) |
+| `/camera/trajectory` | Path | Full camera trajectory (green) |
+| `/map/point_cloud` | PointCloud2 | Colored 3D map points |
+
 ## Tips
 
 you can convert bag1 file to bag2 file using `dpvo_ros/scripts/bag_converter.sh`

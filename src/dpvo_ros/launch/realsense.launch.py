@@ -89,12 +89,12 @@ def generate_launch_description():
     ))
     ld.add_action(DeclareLaunchArgument(
         'use_rviz',
-        default_value='false',
+        default_value='true',
         description='Launch RViz2 with the configured RViz display file.',
     ))
     ld.add_action(DeclareLaunchArgument(
         'rviz_config',
-        default_value=osp.join(realsense_path, 'launch', 'default.rviz'),
+        default_value=osp.join(dpvo_path, 'config', 'dpvo.rviz'),
         description='RViz2 config file.',
     ))
     ld.add_action(realsense_launch)

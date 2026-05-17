@@ -10,9 +10,9 @@ import torch.nn.functional as F
 from einops import asnumpy, rearrange, repeat
 from torch_scatter import scatter_max
 
-from .. import fastba
+import cuda_ba as fastba
 from .. import projective_ops as pops
-from ..lietorch import SE3
+from lietorch import SE3
 from .optim_utils import SE3_to_Sim3, make_pypose_Sim3, ransac_umeyama, run_DPVO_PGO
 from .retrieval import ImageCache, RetrievalDBOW
 

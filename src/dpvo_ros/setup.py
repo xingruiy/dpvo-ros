@@ -10,7 +10,7 @@ for file in os.listdir('launch'):
 
 config_files = []
 for file in os.listdir('config'):
-    if file.endswith('.yaml'):
+    if file.endswith('.yaml') or file.endswith('.rviz'):
         config_files.append('config/' + file)
 
 setup(
